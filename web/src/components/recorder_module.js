@@ -213,7 +213,6 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
         }));
 
         if (isUploadedVideo) {
-            // Manually advance video for uploaded videos after pose detection
             videoElement.currentTime += (1 / uploadedVideoFps);
             if (videoElement.currentTime >= videoElement.duration) {
                 // Stop recording when video ends
@@ -252,6 +251,9 @@ function RecorderModule({ recordingCallback }) {
     const [uploadedVideoFps, setUploadedVideoFps] = useState(DEFAULT_FRAMERATE);
     const startRecord = () => {
         setIsRecording(true);
+        if (isUploadedVideo && videoElement) {
+            videoElement.pause();
+        }
     };
     const stopRecord = () => {
         setIsRecording(false);
@@ -266,9 +268,9 @@ function RecorderModule({ recordingCallback }) {
         tweakedRecording.lastFrame = tweakedRecording.frames.length - 1;
         // Ensure time always starts at 0.
         normalizeTime(tweakedRecording);
-        tweakedRecording.framerate = DEFAULT_FRAMERATE;
-        tweakedRecording.exportWidth = recording.frames[0].videoWidth;
-        tweakedRecording.exportHeight = recording.frames[0].videoHeight;
+        tweakedRecording.framerate = isUploadedVideo ? uploadedVideoFps : DEFAULT_FRAMERATE;
+        tweakedRecording.exportWidth = recordingRef.current.frames[0].videoWidth;
+        tweakedRecording.exportHeight = recordingRef.current.frames[0].videoHeight;
         // Notify parent.
         recordingCallback(tweakedRecording);
     };

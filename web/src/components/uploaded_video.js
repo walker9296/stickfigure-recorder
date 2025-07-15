@@ -14,7 +14,7 @@ function UploadedVideo({ className, readyCallback, videoUrl, onEnded }) {
         }
     }, [readyCallback]);
 
-    return <video ref={videoRef} src={videoUrl} autoPlay playsInline className={className} onEnded={onEnded} />;
+    return <video ref={videoRef} src={videoUrl} playsInline className={className} onEnded={onEnded} />;
 }
 
 export default UploadedVideo;
