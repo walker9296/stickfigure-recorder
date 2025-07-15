@@ -9,6 +9,7 @@ import { makeStyles } from '@material-ui/core/styles';
 import PoseCanvas from "../detection/pose_canvas.js";
 import useAnimationFrame from "../common/animation_frame_hook.js";
 import CameraVideo from "../detection/camera_reader.js";
+import UploadedVideo from "./uploaded_video.js";
 import usePosenet, { posenetConfigs } from "../detection/posenet_hook.js";
 import PoseSmoother from "../detection/smoother.js";
 import Loader from 'react-loader-spinner';
@@ -18,7 +19,7 @@ import ItemSelectorPanel from "./item_selector.js";
 
 import common from "stickfigurecommon";
 
-const DEFAULT_FRAMERATE = 12;
+const DEFAULT_FRAMERATE = 30;
 const useStyles = makeStyles((theme) => ({
     root: {
     },
@@ -175,6 +176,9 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
     const smoothersRef = useRef([]);
     useAnimationFrame(async (timeSinceLastFrameMs, timeSinceStartMs, isDead) => {
         const net = posenet;
+        if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+            return;
+        }
         videoElement.width = videoElement.videoWidth;
         videoElement.height = videoElement.videoHeight;
         const frame = {};
@@ -225,6 +229,7 @@ function RecorderModule({ recordingCallback }) {
     const [smoothingWindow, setSmoothingWindow] = useState(4);
     const [allowMultiplePoses, setAllowMultiplePoses] = useState(false);
     const [backCamera, setBackCamera] = useState(false);
+    const [videoUrl, setVideoUrl] = useState();
 
     const posenet = usePosenet(posenetLevel);
     const [videoElement, setVideoElement] = useState();
@@ -235,6 +240,10 @@ function RecorderModule({ recordingCallback }) {
     };
     const stopRecord = () => {
         setIsRecording(false);
+
+        if (recording.frames.length === 0) {
+            return;
+        }
 
         // Final tweaks before saving.
         let tweakedRecording = JSON.parse(JSON.stringify(recording));
@@ -258,6 +267,26 @@ function RecorderModule({ recordingCallback }) {
                 <div>
                     <div className={classes.recordButtonContainer}>
                         <Button disabled={!posenet} onClick={startRecord} variant="contained" color="primary">{t("Record!")}</Button>
+                        <input
+                            accept="video/mp4,video/x-m4v,video/*"
+                            style={{ display: 'none' }}
+                            id="raised-button-file"
+                            multiple
+                            type="file"
+                            onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                    const url = URL.createObjectURL(file);
+                                    setVideoUrl(url);
+                                    startRecord();
+                                }
+                            }}
+                        />
+                        <label htmlFor="raised-button-file">
+                            <Button variant="contained" color="primary" component="span">
+                                {t("Upload")}
+                            </Button>
+                        </label>
                         {!posenet && <div className={classes.loader}>
                             <Loader className={classes.loaderSpinner} type="Oval" color="#888888" height={48} width={48}></Loader>
                             {t("Loading PoseNet")}
@@ -326,10 +355,15 @@ function RecorderModule({ recordingCallback }) {
                         {loadingMessage}
                     </div>}
 
-                    {isRecording && <CameraVideo
+                    {isRecording && !videoUrl && <CameraVideo
                         className={classes.videoCanvas}
                         readyCallback={setVideoElement}
                         backCamera={backCamera} />}
+                    {isRecording && videoUrl && <UploadedVideo
+                        className={classes.videoCanvas}
+                        readyCallback={setVideoElement}
+                        videoUrl={videoUrl}
+                        onEnded={stopRecord} />}
                     {debugView && <PoseCanvas
                         className={debugView ? classes.debugCanvas : classes.canvas}
                         frame={recording && recording.frames.length && recording.frames[recording.frames.length - 1]}

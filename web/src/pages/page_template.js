@@ -107,7 +107,7 @@ function PageTemplate({ children, className }) {
       {children}
     </div>
 
-    <AdsCard />
+    {/* <AdsCard /> */}
     <div>
       <FacebookShareButton url={["http://stickfigure-recorder.web.app/"]} quote={[t("SNS Share text")]}>
         <FacebookIcon size={32} round />
