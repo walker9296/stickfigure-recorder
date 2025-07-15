@@ -3,7 +3,7 @@ import {
     useRef,
 } from "react";
 
-const useAnimationFrame = (callback, allowAnimate, fps, dependencies = []) => {
+const useAnimationFrame = (callback, allowAnimate, fps, isUploadedVideo, dependencies = []) => {
     const outputEveryMs = 1000 / fps;
 
     const animationKillFlag = useRef({});
@@ -31,7 +31,7 @@ const useAnimationFrame = (callback, allowAnimate, fps, dependencies = []) => {
 
             const prevOutputTimeRefValue = prevOutputTimeRef.current;
             const timeSinceLastOutput = time - prevOutputTimeRefValue;
-            if (!fps || isNaN(timeSinceLastOutput) || timeSinceLastOutput >= outputEveryMs) {
+            if (isUploadedVideo || !fps || isNaN(timeSinceLastOutput) || timeSinceLastOutput >= outputEveryMs) {
                 await callback(timeSinceLastOutput, time - timeStartRef.current, isDead);
                 prevOutputTimeRef.current = time;
             }

@@ -8,7 +8,9 @@ function UploadedVideo({ className, readyCallback, videoUrl, onEnded }) {
 
     useEffect(() => {
         if (videoRef.current) {
-            readyCallback(videoRef.current);
+            videoRef.current.onloadedmetadata = () => {
+                readyCallback(videoRef.current, 30); // Assuming 30 FPS for uploaded videos
+            };
         }
     }, [readyCallback]);
 

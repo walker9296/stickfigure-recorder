@@ -1,6 +1,7 @@
 import {
     useRef,
     useState,
+    useEffect,
 } from "react";
 import {
     Button, Checkbox, FormControlLabel, FormControl, RadioGroup, Radio, FormLabel, Slider
@@ -19,6 +20,7 @@ import ItemSelectorPanel from "./item_selector.js";
 
 import common from "stickfigurecommon";
 
+//const DEFAULT_FRAMERATE = 30;
 const DEFAULT_FRAMERATE = 30;
 const useStyles = makeStyles((theme) => ({
     root: {
@@ -158,7 +160,7 @@ async function multiPoseDetection(posenet, videoElement) {
     });
 }
 
-function useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems) {
+function useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps) {
     const { t } = useTranslation();
     const [recording, setRecording] = useState({
         frames: [],
@@ -181,6 +183,7 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
         }
         videoElement.width = videoElement.videoWidth;
         videoElement.height = videoElement.videoHeight;
+
         const frame = {};
         if (allowMultiplePoses) {
             frame.poses = await multiPoseDetection(net, videoElement);
@@ -208,10 +211,22 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
                 frameIndex: prevRecording.frames.length,
             }],
         }));
+
+        if (isUploadedVideo) {
+            // Manually advance video for uploaded videos after pose detection
+            videoElement.currentTime += (1 / uploadedVideoFps);
+            if (videoElement.currentTime >= videoElement.duration) {
+                // Stop recording when video ends
+                stopRecord(recording); // Call stopRecord to finalize the recording
+                isDead(); // This will stop the animation frame loop
+                return;
+            }
+        }
     },
         /* allowAnimate= */ isRecording && posenet && videoElement,
-        /* fps= */ DEFAULT_FRAMERATE,
-    /* dependencies= */[videoElement, selectedItems]);
+        /* fps= */ isUploadedVideo ? 1 : DEFAULT_FRAMERATE,
+        /* isUploadedVideo= */ isUploadedVideo,
+        /* dependencies= */[videoElement, selectedItems, isUploadedVideo]);
     // Note: we don't include smoothingWindow and allowMultiplePoses in dependencies because
     // these never change while the animation is running.
     return [recording, loadingMessage];
@@ -230,23 +245,23 @@ function RecorderModule({ recordingCallback }) {
     const [allowMultiplePoses, setAllowMultiplePoses] = useState(false);
     const [backCamera, setBackCamera] = useState(false);
     const [videoUrl, setVideoUrl] = useState();
+    const [isUploadedVideo, setIsUploadedVideo] = useState(false);
 
     const posenet = usePosenet(posenetLevel);
     const [videoElement, setVideoElement] = useState();
-    const [recording, loadingMessage] = useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems);
-
+    const [uploadedVideoFps, setUploadedVideoFps] = useState(DEFAULT_FRAMERATE);
     const startRecord = () => {
         setIsRecording(true);
     };
     const stopRecord = () => {
         setIsRecording(false);
 
-        if (recording.frames.length === 0) {
+        if (recordingRef.current.frames.length === 0) {
             return;
         }
 
         // Final tweaks before saving.
-        let tweakedRecording = JSON.parse(JSON.stringify(recording));
+        let tweakedRecording = JSON.parse(JSON.stringify(recordingRef.current));
         tweakedRecording.firstFrame = 0;
         tweakedRecording.lastFrame = tweakedRecording.frames.length - 1;
         // Ensure time always starts at 0.
@@ -254,10 +269,15 @@ function RecorderModule({ recordingCallback }) {
         tweakedRecording.framerate = DEFAULT_FRAMERATE;
         tweakedRecording.exportWidth = recording.frames[0].videoWidth;
         tweakedRecording.exportHeight = recording.frames[0].videoHeight;
-
         // Notify parent.
         recordingCallback(tweakedRecording);
     };
+
+    const [recording, loadingMessage] = useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps);
+    const recordingRef = useRef(recording);
+    useEffect(() => {
+        recordingRef.current = recording;
+    }, [recording]);
 
     const [debugView, setDebugView] = useState(false);
     return <div className={classes.root}>
@@ -278,6 +298,7 @@ function RecorderModule({ recordingCallback }) {
                                 if (file) {
                                     const url = URL.createObjectURL(file);
                                     setVideoUrl(url);
+                                    setIsUploadedVideo(true);
                                     startRecord();
                                 }
                             }}
@@ -361,7 +382,10 @@ function RecorderModule({ recordingCallback }) {
                         backCamera={backCamera} />}
                     {isRecording && videoUrl && <UploadedVideo
                         className={classes.videoCanvas}
-                        readyCallback={setVideoElement}
+                        readyCallback={(videoElement, fps) => {
+                            setVideoElement(videoElement);
+                            setUploadedVideoFps(fps);
+                        }}
                         videoUrl={videoUrl}
                         onEnded={stopRecord} />}
                     {debugView && <PoseCanvas
