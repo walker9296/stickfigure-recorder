@@ -4,14 +4,14 @@ import {
     useEffect,
 } from "react";
 import {
-    Button, Checkbox, FormControlLabel, FormControl, RadioGroup, Radio, FormLabel, Slider
+    Button, Checkbox, FormControlLabel, FormControl, FormLabel, Slider
 } from "@material-ui/core";
 import { makeStyles } from '@material-ui/core/styles';
 import PoseCanvas from "../detection/pose_canvas.js";
 import useAnimationFrame from "../common/animation_frame_hook.js";
 import CameraVideo from "../detection/camera_reader.js";
 import UploadedVideo from "./uploaded_video.js";
-import usePosenet, { posenetConfigs } from "../detection/posenet_hook.js";
+import useMoveNet from "../detection/movenet_hook.js";
 import PoseSmoother from "../detection/smoother.js";
 import Loader from 'react-loader-spinner';
 import { normalizeTime } from "../detection/recording_editor.js";
@@ -19,6 +19,9 @@ import { useTranslation } from 'react-i18next';
 import ItemSelectorPanel from "./item_selector.js";
 
 import common from "stickfigurecommon";
+
+import { adaptPose } from "../detection/adapt";
+
 
 //const DEFAULT_FRAMERATE = 30;
 const DEFAULT_FRAMERATE = 30;
@@ -146,30 +149,33 @@ function performSmoothing(poses, poseSmoothersRef, smoothingWindow) {
         });
 }
 
-async function singlePoseDetection(posenet, videoElement) {
-    const pose = await posenet.estimateSinglePose(videoElement);
-    return [pose];
+// MoveNet 单人检测
+async function singlePoseDetection(detector, video) {
+  const poses = await detector.estimatePoses(video, {
+    maxPoses: 1,
+    flipHorizontal: false
+  });
+  return poses.length > 0 ? [poses[0]] : [];
 }
 
-async function multiPoseDetection(posenet, videoElement) {
-    return posenet.estimateMultiplePoses(videoElement, {
-        flipHorizontal: false,
-        maxDetections: 5,
-        scoreThreshold: 0.5,
-        nmsRadius: 20
-    });
+// MoveNet 多人检测
+async function multiPoseDetection(detector, video) {
+  return detector.estimatePoses(video, {
+    maxPoses: 5,
+    flipHorizontal: false
+   });
 }
 
-function useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps) {
+function useRecording(detector, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps) {
     const { t } = useTranslation();
     const [recording, setRecording] = useState({
         frames: [],
     });
 
     // Return a "waiting" message if we're told to record but we're not ready.
-    const loadingMessage = isRecording && (!posenet || !videoElement) ?
+    const loadingMessage = isRecording && (!detector || !videoElement) ?
         (t("Waiting for") +
-            [!posenet && t("PoseNet"),
+            [!detector && t("MoveNet"),
             !videoElement && t("video")]
                 .filter(x => x)
                 .join(", "))
@@ -177,19 +183,23 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
 
     const smoothersRef = useRef([]);
     useAnimationFrame(async (timeSinceLastFrameMs, timeSinceStartMs, isDead) => {
-        const net = posenet;
-        if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+        if (!videoElement || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
             return;
         }
         videoElement.width = videoElement.videoWidth;
         videoElement.height = videoElement.videoHeight;
 
         const frame = {};
-        if (allowMultiplePoses) {
-            frame.poses = await multiPoseDetection(net, videoElement);
+        if (!detector) {
+            frame.poses = [];
         } else {
-            frame.poses = await singlePoseDetection(net, videoElement);
+            const raw = allowMultiplePoses
+                ? await multiPoseDetection(detector, videoElement)
+                : await singlePoseDetection(detector, videoElement);
+            // 适配成 PoseNet 风格
+            frame.poses = raw.map(adaptPose);
         }
+
         performSmoothing(frame.poses, smoothersRef, smoothingWindow);
 
         frame.videoWidth = videoElement.videoWidth;
@@ -222,16 +232,17 @@ function useRecording(posenet, videoElement, isRecording, smoothingWindow, allow
             }
         }
     },
-        /* allowAnimate= */ isRecording && posenet && videoElement,
+        /* allowAnimate= */ isRecording && detector && videoElement,
         /* fps= */ isUploadedVideo ? 1 : DEFAULT_FRAMERATE,
         /* isUploadedVideo= */ isUploadedVideo,
-        /* dependencies= */[videoElement, selectedItems, isUploadedVideo]);
+        /* dependencies= */[videoElement, selectedItems, isUploadedVideo, detector]);
     // Note: we don't include smoothingWindow and allowMultiplePoses in dependencies because
     // these never change while the animation is running.
     return [recording, loadingMessage];
 }
 
 function RecorderModule({ recordingCallback }) {
+    const detector = useMoveNet();
     const classes = useStyles();
     const { t } = useTranslation();
 
@@ -239,22 +250,16 @@ function RecorderModule({ recordingCallback }) {
     const [selectedItems, setSelectedItems] = useState([]);
 
     // Recording settings
-    const [posenetLevel, setPosenetLevel] = useState("high");
     const [smoothingWindow, setSmoothingWindow] = useState(4);
     const [allowMultiplePoses, setAllowMultiplePoses] = useState(false);
     const [backCamera, setBackCamera] = useState(false);
     const [videoUrl, setVideoUrl] = useState();
     const [isUploadedVideo, setIsUploadedVideo] = useState(false);
-
-    const posenet = usePosenet(posenetLevel);
+    
     const [videoElement, setVideoElement] = useState();
     const [uploadedVideoFps, setUploadedVideoFps] = useState(DEFAULT_FRAMERATE);
-    const startRecord = () => {
-        setIsRecording(true);
-        if (isUploadedVideo && videoElement) {
-            videoElement.pause();
-        }
-    };
+    const recordingRef = useRef({ frames: [] });
+
     const stopRecord = () => {
         setIsRecording(false);
 
@@ -275,20 +280,35 @@ function RecorderModule({ recordingCallback }) {
         recordingCallback(tweakedRecording);
     };
 
-    const [recording, loadingMessage] = useRecording(posenet, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps);
-    const recordingRef = useRef(recording);
+    const [recording, loadingMessage] = useRecording(detector, videoElement, isRecording, smoothingWindow, allowMultiplePoses, selectedItems, isUploadedVideo, stopRecord, uploadedVideoFps);
+    
     useEffect(() => {
         recordingRef.current = recording;
     }, [recording]);
 
     const [debugView, setDebugView] = useState(false);
+
+    const startRecord = () => {
+        setIsRecording(true);
+        if (isUploadedVideo && videoElement) {
+            videoElement.pause();
+        }
+    };
+
+    if (!detector) {
+        return <div className={classes.loader}>
+            <Loader className={classes.loaderSpinner} type="Oval" color="#888888" height={48} width={48}></Loader>
+            {t("Loading MoveNet")}
+        </div>;
+    }
+
     return <div className={classes.root}>
 
         <div>
             {!isRecording && <div>
                 <div>
                     <div className={classes.recordButtonContainer}>
-                        <Button disabled={!posenet} onClick={startRecord} variant="contained" color="primary">{t("Record!")}</Button>
+                        <Button disabled={!detector} onClick={startRecord} variant="contained" color="primary">{t("Record!")}</Button>
                         <input
                             accept="video/mp4,video/x-m4v,video/*"
                             style={{ display: 'none' }}
@@ -305,27 +325,17 @@ function RecorderModule({ recordingCallback }) {
                                 }
                             }}
                         />
-                        <label htmlFor="raised-button-file">
+                        &nbsp;&nbsp;&nbsp;&nbsp;<label htmlFor="raised-button-file">
                             <Button variant="contained" color="primary" component="span">
                                 {t("Upload")}
                             </Button>
                         </label>
-                        {!posenet && <div className={classes.loader}>
+                        {!detector && <div className={classes.loader}>
                             <Loader className={classes.loaderSpinner} type="Oval" color="#888888" height={48} width={48}></Loader>
-                            {t("Loading PoseNet")}
+                            {t("Loading MoveNet")}
                         </div>}
                     </div>
 
-                    <div className={classes.formControl}>
-                        <FormControl component="fieldset">
-                            <FormLabel component="legend">{t("PosenetAccuracy")}</FormLabel>
-                            <RadioGroup row aria-label="gender" value={posenetLevel} onChange={(event) => setPosenetLevel(event.target.value)}>
-                                {Object.keys(posenetConfigs).map(config =>
-                                    <FormControlLabel key={`config_${config}`} value={config} control={<Radio />} label={t(`PosenetAccuracy_${config}`)} />
-                                )}
-                            </RadioGroup>
-                        </FormControl>
-                    </div>
                     <div className={classes.formControl}>
                         <FormControlLabel control={<Checkbox
                             checked={allowMultiplePoses}

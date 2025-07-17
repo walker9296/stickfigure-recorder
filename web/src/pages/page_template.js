@@ -1,6 +1,4 @@
-import {
-  useEffect,
-} from "react";
+
 import {
   Typography
 } from "@material-ui/core";
@@ -39,23 +37,6 @@ const useStyles = makeStyles((theme) => ({
   }
 }));
 
-// From: https://qiita.com/qrusadorz/items/14972b6e069feaf777a9
-function AdsCard(props) {
-  useEffect(() => {
-    if (window.adsbygoogle/* && process.env.NODE_ENV !== "development"*/) {
-      window.adsbygoogle.push({});
-    }
-  }, [])
-
-  return (
-    <ins className="adsbygoogle"
-      style={{ "display": "block" }}
-      data-ad-client={process.env.REACT_APP_GOOGLE_AD_CLIENT}
-      data-ad-slot={process.env.REACT_APP_GOOGLE_AD_SLOT}
-      data-ad-format="auto"
-      data-full-width-responsive="true"></ins>
-  );
-}
 
 function BottomBar() {
   const classes = useStyles();
@@ -107,7 +88,6 @@ function PageTemplate({ children, className }) {
       {children}
     </div>
 
-    {/* <AdsCard /> */}
     <div>
       <FacebookShareButton url={["http://stickfigure-recorder.web.app/"]} quote={[t("SNS Share text")]}>
         <FacebookIcon size={32} round />

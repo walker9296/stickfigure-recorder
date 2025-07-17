@@ -48,7 +48,7 @@ function PageDescription() {
         <div>
             <p>
                 <Trans i18nKey="detailedDescription1">
-                    We use <a href="https://www.tensorflow.org/lite/examples/pose_estimation/overview" target="_blank" rel="noreferrer">PoseNet</a> to estimate your pose and generate stickfigures.
+                    We use <a href="https://www.tensorflow.org/lite/examples/pose_estimation/overview" target="_blank" rel="noreferrer">MoveNet</a> to estimate your pose and generate stickfigures.
                 </Trans>
             </p>
             <p>
